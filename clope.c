@@ -67,6 +67,8 @@ int clope_loop_index_from_beta(osl_scop_p scop, clay_array_p beta) {
     matching = matchingLength(current_beta, beta);
     if (matching != beta->size)
       continue;
+    if (matching == current_beta->size) // not a loop
+      return -1;
 
     stmt_usr = (candl_statement_usr_p) statement->usr;
     return stmt_usr->index[beta->size - 1];
@@ -88,15 +90,11 @@ clay_list_p clope_parallel_loop_betas(osl_scop_p scop) {
 
   allLoopBetas = clope_all_loop_betas(scop);
 
-  int i;
-  for (i = 0; i < allLoopBetas->size; i++) {
-    clay_array_print(stdout, allLoopBetas->data[i], 1);
-  }
-
   options = candl_options_malloc();
   options->fullcheck = 1;
   candl_scop_usr_init(scop);
   dependences = candl_dependence(scop, options);
+
   if (dependences)
     candl_dependence_init_fields(scop, dependences);
   // If a dependence between the statement in the loop is carried by that loop,
@@ -109,7 +107,7 @@ clay_list_p clope_parallel_loop_betas(osl_scop_p scop) {
     targetBeta = clay_beta_extract(dependence->stmt_target_ptr->scattering);
 
     int matching = matchingLength(sourceBeta, targetBeta);
-    for (i = 0; i < matching - 1; i++) {
+    for (i = 0; i < matching; i++) {
       clay_array_p loop = clope_clay_sub_array(sourceBeta, i + 1); // sourceBeta and targetBeta are identical up to matching.
       int index = clope_loop_index_from_beta(scop, loop);
       int carried = 1;
