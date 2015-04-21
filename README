@@ -1,3 +1,17 @@
-CLoPE
+CLoPE = Chunky Loop Parallelism Extractor
 
-Chunky Loop Parallelism Extractor
+(c) Inria, 2015.  All rights reserved.
+Written by Oleksandr Zinenko <oleksandr.zinenko@inria.fr>
+
+Generate extra semantic information about parallelizable loops in the
+polyhedral model by using Candl dependence analysis algorithm.
+
+Usage:
+$ clope < input.scop > output.scop
+Generates Loop extension in the output OpenScop representation.
+
+Coupled usage with PeriSCoP toolkit:
+$ clan input.c -o stdout | clope | cloog -openscop stdin > output.c
+Generate OpenMP parallel for pragmas for all loops that may be executed in
+parallel.
+
