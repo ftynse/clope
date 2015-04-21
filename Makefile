@@ -11,6 +11,6 @@ all: clope
 clope: clope.o
 	$(LD) $< $(LDFLAGS) -o clope
 
-clope.o: clope.c
+clope.o: clope.c clope.h
 	$(CC) $(CFLAGS) -c $<
 
