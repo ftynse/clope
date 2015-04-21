@@ -151,7 +151,7 @@ clay_array_p clope_statement_ids(osl_scop_p scop, clay_array_p beta) {
     length = matchingLength(beta, current_beta);
     if (length == beta->size) {
       stmt_usr = (candl_statement_usr_p) statement->usr;
-      clay_array_add(statement_ids, stmt_usr->label); // XXX: assuming candl lables are equal to IDs CLooG expects.
+      clay_array_add(statement_ids, stmt_usr->label + 1); // XXX: assuming candl lables are equal to IDs CLooG expects.
       if (length == current_beta->size) {
         return statement_ids; // This is a statement.
       }
@@ -165,7 +165,16 @@ clope_index_match_p clope_bulid_index_match(osl_scop_p scop, clay_list_p all_bet
   clope_index_match_p match_list = NULL, current_match;
   osl_statement_p statement;
   clay_array_p statement_ids;
-  osl_names_p names = osl_scop_names(scop);
+  osl_scatnames_p scatnames =
+    (osl_scatnames_p) osl_generic_lookup(scop->extension, OSL_URI_SCATNAMES);
+  osl_strings_p iterator_names;
+  osl_names_p names = NULL;
+  if (scatnames) {
+    iterator_names = scatnames->names;
+  } else {
+    names = osl_scop_names(scop);
+    iterator_names = names->scatt_dims;
+  }
 
   for (i = 0; i < all_betas->size; i++) {
     index = clope_characterize_beta(scop, all_betas->data[i], &statement);
@@ -174,19 +183,19 @@ clope_index_match_p clope_bulid_index_match(osl_scop_p scop, clay_list_p all_bet
     current_match->beta = clay_array_clone(all_betas->data[i]);
     current_match->loop = osl_loop_malloc();
     char *itername = NULL;
-    if (osl_strings_size(names->iterators) >= current_match->beta->size) {
-      itername = names->iterators->string[current_match->beta->size - 1];
+    if (osl_strings_size(iterator_names) >= current_match->beta->size) {
+      itername = iterator_names->string[2 * current_match->beta->size - 1];
     }
     assert(itername != NULL);
     current_match->loop->iter = clope_strdup(itername);
 
-    for (int j = 0; j < current_match->beta->size - 1; j++) {
-      if (j == 0) {
-        current_match->loop->private_vars = clope_strdup(names->iterators->string[j]);
+    for (int j = 1; j < current_match->beta->size - 1; j += 2) {
+      if (j == 1) {
+        current_match->loop->private_vars = clope_strdup(iterator_names->string[j]);
       } else {
         current_match->loop->private_vars =
           clope_strcat(current_match->loop->private_vars,
-                       names->iterators->string[i]);
+                       iterator_names->string[i]);
       }
     }
 
@@ -198,6 +207,8 @@ clope_index_match_p clope_bulid_index_match(osl_scop_p scop, clay_list_p all_bet
     match_list = clope_index_match_append_sorted(match_list, current_match);
   }
 
+  if (names)
+    osl_names_free(names);
   return match_list;
 }
 
