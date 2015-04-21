@@ -1,8 +1,8 @@
-CC = gcc#clang
-CFLAGS = #-I/tmp/usr/include -g
+CC = gcc
+CFLAGS = -Wall
 
-LD = gcc# clang
-LDFLAGS =# /tmp/usr/lib/libcandl.a /tmp/usr/lib/libosl.a /tmp/usr/lib/libpiplib_gmp.a -lclay -lgmp -g
+LD = gcc
+LDFLAGS = -clay -lcandl -losl -lpiplib_gmp -lgmp
 
 
 .PHONY: all
