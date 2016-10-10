@@ -38,6 +38,7 @@ int          matchingLength(clay_array_p, clay_array_p);
 clay_array_p clope_clay_sub_array(clay_array_p, int);
 clay_list_p  clope_all_loop_betas(osl_scop_p);
 clay_list_p  clope_parallel_loop_betas(osl_scop_p);
+clay_list_p  clope_parallel_loop_betas_(osl_scop_p, osl_dependence_p);
 
 /*+*********** high-level processing functions ****************/
 osl_loop_p   clope_generate_osl_loop_(osl_scop_p, clope_index_match_p);

@@ -308,24 +308,38 @@ int clope_loop_index_from_beta(osl_scop_p scop, clay_array_p beta) {
 }
 
 clay_list_p clope_parallel_loop_betas(osl_scop_p scop) {
+  candl_options_p options;
+  clay_list_p parallelLoopBetas;
+  osl_dependence_p dependences;
+
+  dependences = (osl_dependence_p) osl_generic_lookup(scop->extension, OSL_URI_DEPENDENCE);
+  if (dependences) {
+    parallelLoopBetas = clope_parallel_loop_betas_(scop, dependences);
+  } else {
+    options = candl_options_malloc();
+    options->fullcheck = 1;
+    dependences = candl_dependence(scop, options);
+    if (dependences)
+      candl_dependence_init_fields(scop, dependences);
+    parallelLoopBetas = clope_parallel_loop_betas_(scop, dependences);
+    candl_options_free(options);
+  }
+
+  return parallelLoopBetas;
+}
+
+clay_list_p clope_parallel_loop_betas_(osl_scop_p scop, osl_dependence_p dependences) {
   // Parallelism condition of a given loop = all dependences where either source
   // or target statement, or both, have beta-prefix of this loop are not carried
   // by this loop.
-  osl_dependence_p dependence, dependences;
+  osl_dependence_p dependence;
   clay_list_p allLoopBetas, nonparallelLoopBetas, parallelLoopBetas;
-  candl_options_p options;
 
   nonparallelLoopBetas = clay_list_malloc();
   parallelLoopBetas = clay_list_malloc();
 
   allLoopBetas = clope_all_loop_betas(scop);
 
-  options = candl_options_malloc();
-  options->fullcheck = 1;
-  dependences = candl_dependence(scop, options);
-
-  if (dependences)
-    candl_dependence_init_fields(scop, dependences);
   // If a dependence between the statement in the loop is carried by that loop,
   // the loop is not parallel.
   for (dependence = dependences; dependence != NULL; dependence = dependence->next) {
@@ -352,7 +366,6 @@ clay_list_p clope_parallel_loop_betas(osl_scop_p scop) {
     clay_array_free(sourceBeta);
     clay_array_free(targetBeta);
   }
-  candl_options_free(options);
 
   for (int i = 0; i < allLoopBetas->size; i++) {
     if (!clay_list_contains(nonparallelLoopBetas, allLoopBetas->data[i]))
