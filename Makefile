@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall
 
 LD = gcc
-LDFLAGS = -clay -lcandl -losl -lpiplib_gmp -lgmp
+LDFLAGS = -lclay -lcandl -losl -lpiplib_gmp -lgmp
 
 
 .PHONY: all
