@@ -39,10 +39,12 @@ clay_array_p clope_clay_sub_array(clay_array_p, int);
 clay_list_p  clope_all_loop_betas(osl_scop_p);
 clay_list_p  clope_parallel_loop_betas(osl_scop_p);
 clay_list_p  clope_parallel_loop_betas_(osl_scop_p, osl_dependence_p);
+clay_list_p  clope_scheduled_parallel_loop_betas(osl_scop_p);
 
 /*+*********** high-level processing functions ****************/
 osl_loop_p   clope_generate_osl_loop_(osl_scop_p, clope_index_match_p);
 void         clope_generate_osl_loop(osl_scop_p);
+void         clope_generate_osl_loop_scheduled(osl_scop_p);
 
 /*+*********** general utility functions **********************/
 char *clope_strdup(const char *const str);
