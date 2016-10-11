@@ -2,6 +2,7 @@
 #include <osl/extensions/loop.h>
 
 #include <candl/candl.h>
+#include <candl/label_mapping.h>
 
 #include <clay/beta.h>
 #include <clay/array.h>
@@ -239,18 +240,81 @@ osl_loop_p clope_generate_osl_loop_(osl_scop_p scop, clope_index_match_p mapping
   return loops;
 }
 
-static void clope_generate_osl_loop_f(osl_scop_p scop,
+static int clope_compare_ints(const void *e1, const void *e2) {
+  return *((int *)e1) - *((int *)e2);
+}
+
+static void clope_generate_osl_loop_f(osl_scop_p uscop,
                                       clay_list_p (*analyzer)(osl_scop_p)) {
-  if (!scop || !analyzer)
+  if (!uscop || !analyzer)
     return;
+
+  // FIXME: assumes candl_scop_usr_init(uscop) was called before, verify
+  osl_scop_p scop = candl_scop_remove_unions(uscop);
+  candl_scop_usr_init(scop);
+  candl_label_mapping_p label_mapping = candl_scop_label_mapping(scop);
 
   clay_list_p parallelLoopBetas = analyzer(scop);
   clay_list_p allLoopBetas = clope_all_loop_betas(scop);
   clope_index_match_p mapping = clope_bulid_index_match(scop, allLoopBetas);
   clope_index_match_annotate(mapping, parallelLoopBetas);
   osl_loop_p loops = clope_generate_osl_loop_(scop, mapping);
+
+  // Remap loop extension
+  for (osl_loop_p loop = loops; loop != NULL; loop = loop->next) {
+    clay_array_p stmt_ids = clay_array_malloc();
+    // for each statement mentioned in the loop,
+    //   use the label mapping to change it to the original one, avoid duplicates
+    for (int i = 0; i < loop->nb_stmts; i++) {
+      int original = candl_label_mapping_find_original(label_mapping,
+                                                       loop->stmt_ids[i] - 1) + 1;
+      if (!clay_array_contains(stmt_ids, original)) {
+        clay_array_add(stmt_ids, original);
+      }
+    }
+    loop->nb_stmts = stmt_ids->size;
+    loop->stmt_ids = (int *) realloc(loop->stmt_ids, stmt_ids->size * sizeof(int));
+    memcpy(loop->stmt_ids, stmt_ids->data, stmt_ids->size * sizeof(int));
+    clay_array_free(stmt_ids);
+
+    // keep stmt ids sorted to facilitate later search
+    qsort(loop->stmt_ids, loop->nb_stmts, sizeof(int), &clope_compare_ints);
+
+  }
+
+  // find loops with identical iterator names and statement sets (order not important),
+  // keep only first one and remove the others while selecting the most conservative flag
+  for (osl_loop_p loop = loops; loop != NULL; loop = loop->next) {
+    if (loop->nb_stmts == -1) // skip flag
+      continue;
+    for (osl_loop_p other_loop = loop->next; other_loop != NULL;
+         other_loop = other_loop->next) {
+      if (other_loop->nb_stmts == -1)
+        continue;
+      if (strcmp(loop->iter, other_loop->iter) == 0 &&
+          loop->nb_stmts == other_loop->nb_stmts &&
+          memcmp(loop->stmt_ids, other_loop->stmt_ids, loop->nb_stmts * sizeof(int)) == 0) {
+        // what to do with private vars?
+
+        loop->directive = loop->directive & other_loop->directive;
+        other_loop->nb_stmts = -1; // set skip flag
+      }
+    }
+  }
+  for (osl_loop_p loop = loops; loop != NULL && loop->next != NULL;
+       loop = loop->next) {  // first loop is never skipped
+    if (loop->next->nb_stmts == -1)
+      loop->next = loop->next->next;
+  }
+
+
   osl_generic_p loopsGeneric = osl_generic_shell(osl_loop_clone(loops), osl_loop_interface());
-  osl_generic_add(&scop->extension, loopsGeneric);
+  osl_generic_remove(&uscop->extension, OSL_URI_LOOP);
+  osl_generic_add(&uscop->extension, loopsGeneric);
+
+  candl_label_mapping_free(label_mapping);
+  candl_scop_usr_cleanup(scop);
+  osl_scop_free(scop);
 
   clope_index_match_destroy(mapping);
   clay_list_free(allLoopBetas);
