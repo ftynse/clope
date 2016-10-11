@@ -35,6 +35,21 @@ char *clope_strcat(char *str, const char *const extra) {
   return str;
 }
 
+/// Checks whether the given SCoP uses unions of relations for the domain or the
+/// scattering.
+static int clope_scop_has_unions(osl_scop_p scop) {
+  osl_statement_p statement;
+
+  for (statement = scop->statement; statement != NULL;
+       statement = statement->next) {
+    if (statement->domain && statement->domain->next)
+      return 1;
+    if (statement->scattering && statement->scattering->next)
+      return 1;
+  }
+  return 0;
+}
+
 clope_index_match_p clope_index_match_create() {
   clope_index_match_p match = (clope_index_match_p) malloc(sizeof(clope_index_match_t));
   match->index = -1;
@@ -251,9 +266,17 @@ static void clope_generate_osl_loop_f(osl_scop_p uscop,
     return;
 
   candl_scop_usr_init(uscop);
-  osl_scop_p scop = candl_scop_remove_unions(uscop);
-  candl_scop_usr_init(scop);
-  candl_label_mapping_p label_mapping = candl_scop_label_mapping(scop);
+  osl_scop_p scop;
+  candl_label_mapping_p label_mapping = NULL;
+  int has_unions = clope_scop_has_unions(uscop);
+
+  if (has_unions) {
+    scop = candl_scop_remove_unions(uscop);
+    candl_scop_usr_init(scop);
+    label_mapping = candl_scop_label_mapping(scop);
+  } else {
+    scop = uscop;
+  }
 
   clay_list_p parallelLoopBetas = analyzer(scop);
   clay_list_p allLoopBetas = clope_all_loop_betas(scop);
@@ -261,6 +284,7 @@ static void clope_generate_osl_loop_f(osl_scop_p uscop,
   clope_index_match_annotate(mapping, parallelLoopBetas);
   osl_loop_p loops = clope_generate_osl_loop_(scop, mapping);
 
+  if (has_unions) {
   // Remap loop extension
   for (osl_loop_p loop = loops; loop != NULL; loop = loop->next) {
     clay_array_p stmt_ids = clay_array_malloc();
@@ -307,15 +331,17 @@ static void clope_generate_osl_loop_f(osl_scop_p uscop,
     if (loop->next->nb_stmts == -1)
       loop->next = loop->next->next;
   }
-
+  }
 
   osl_generic_p loopsGeneric = osl_generic_shell(osl_loop_clone(loops), osl_loop_interface());
   osl_generic_remove(&uscop->extension, OSL_URI_LOOP);
   osl_generic_add(&uscop->extension, loopsGeneric);
 
-  candl_label_mapping_free(label_mapping);
-  candl_scop_usr_cleanup(scop);
-  osl_scop_free(scop);
+  if (has_unions) {
+    candl_label_mapping_free(label_mapping);
+    candl_scop_usr_cleanup(scop);
+    osl_scop_free(scop);
+  }
 
   clope_index_match_destroy(mapping);
   clay_list_free(allLoopBetas);
@@ -707,21 +733,6 @@ clay_list_p clope_scheduled_parallel_loop_betas(osl_scop_p scop) {
   osl_scop_free(applied_scop);
   osl_dependence_free(dependence);
   return betas;
-}
-
-/// Checks whether the given SCoP uses unions of relations for the domain or the
-/// scattering.
-static int clope_scop_has_unions(osl_scop_p scop) {
-  osl_statement_p statement;
-
-  for (statement = scop->statement; statement != NULL;
-       statement = statement->next) {
-    if (statement->domain && statement->domain->next)
-      return 1;
-    if (statement->scattering && statement->scattering->next)
-      return 1;
-  }
-  return 0;
 }
 
 int main(int argc, char **argv) {
