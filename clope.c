@@ -1,5 +1,7 @@
-#include "clope.h"
 #include "options.h"
+#include "index_match.h"
+
+#include "clope/clope.h"
 
 #include <osl/osl.h>
 #include <osl/extensions/loop.h>
@@ -35,9 +37,38 @@ char *clope_strcat(char *str, const char *const extra) {
   return str;
 }
 
+/// Returns the length of the prefix common for the two given arrays.
+int clope_clay_array_matching_length(clay_array_p first, clay_array_p second) {
+  int i, matching = 0;
+  int minsize = first->size < second->size ? first->size : second->size;
+  for (i = 0; i < minsize; i++) {
+    if (first->data[i] == second->data[i])
+      matching++;
+    else
+      break;
+  }
+  return matching;
+}
+
+/// Create a new array containing a prefix of the given array with the given
+/// length.
+clay_array_p clope_clay_sub_array(clay_array_p array, int length) {
+  int i;
+  clay_array_p sub;
+
+  if (length < 0)
+    return NULL;
+  sub = clay_array_malloc();
+  for (i = 0; i < length; i++) {
+    clay_array_add(sub, array->data[i]);
+  }
+  return sub;
+}
+
+
 /// Checks whether the given SCoP uses unions of relations for the domain or the
 /// scattering.
-static int clope_scop_has_unions(osl_scop_p scop) {
+int clope_scop_has_unions(osl_scop_p scop) {
   osl_statement_p statement;
 
   for (statement = scop->statement; statement != NULL;
@@ -123,7 +154,7 @@ int clope_characterize_beta(osl_scop_p scop, clay_array_p beta, osl_statement_p 
     *stmt = NULL;
   for (statement = scop->statement; statement != NULL; statement = statement->next) {
     current_beta = clay_beta_extract(statement->scattering);
-    matching = matchingLength(current_beta, beta);
+    matching = clope_clay_array_matching_length(current_beta, beta);
     if (matching != beta->size)
       continue;
     if (matching == current_beta->size) // not a loop
@@ -146,7 +177,7 @@ int clope_statement_number(osl_scop_p scop, clay_array_p beta) {
 
   for ( ; statement != NULL; statement = statement->next) {
     current_beta = clay_beta_extract(statement->scattering);
-    length = matchingLength(beta, current_beta);
+    length = clope_clay_array_matching_length(beta, current_beta);
     if (length == beta->size) {
       if (length == current_beta->size) {
         return 1; // This is a statement, we must have onlyo one statement with a given beta.
@@ -166,7 +197,7 @@ clay_array_p clope_statement_ids(osl_scop_p scop, clay_array_p beta) {
 
   for ( ; statement != NULL; statement = statement->next) {
     current_beta = clay_beta_extract(statement->scattering);
-    length = matchingLength(beta, current_beta);
+    length = clope_clay_array_matching_length(beta, current_beta);
     if (length == beta->size) {
       stmt_usr = (candl_statement_usr_p) statement->usr;
       clay_array_add(statement_ids, stmt_usr->label + 1); // XXX: assuming candl lables are equal to IDs CLooG expects.
@@ -238,7 +269,7 @@ void clope_index_match_annotate(clope_index_match_p head, clay_list_p parallel_b
   }
 }
 
-osl_loop_p clope_generate_osl_loop_(osl_scop_p scop, clope_index_match_p mapping) {
+static osl_loop_p clope_generate_osl_loop_(osl_scop_p scop, clope_index_match_p mapping) {
   osl_loop_p loops, loop_ptr;
 
   if (!mapping || !scop)
@@ -246,7 +277,7 @@ osl_loop_p clope_generate_osl_loop_(osl_scop_p scop, clope_index_match_p mapping
 
   loop_ptr = mapping->loop;
   loops = mapping->loop;
-  
+
   mapping = mapping->next;
   for ( ; mapping != NULL; mapping = mapping->next) {
     loop_ptr->next = mapping->loop;
@@ -357,32 +388,6 @@ void clope_generate_osl_loop_scheduled(osl_scop_p scop) {
   clope_generate_osl_loop_f(scop, &clope_scheduled_parallel_loop_betas);
 }
 
-
-int matchingLength(clay_array_p first, clay_array_p second) {
-  int i, matching = 0;
-  int minsize = first->size < second->size ? first->size : second->size;
-  for (i = 0; i < minsize; i++) {
-    if (first->data[i] == second->data[i])
-      matching++;
-    else
-      break;
-  }
-  return matching;
-}
-
-clay_array_p clope_clay_sub_array(clay_array_p array, int length) {
-  int i;
-  clay_array_p sub;
-
-  if (length < 0)
-    return NULL;
-  sub = clay_array_malloc();
-  for (i = 0; i < length; i++) {
-    clay_array_add(sub, array->data[i]);
-  }
-  return sub;
-}
-
 clay_list_p clope_all_loop_betas(osl_scop_p scop) {
   osl_statement_p statement;
   osl_relation_p scattering;
@@ -409,28 +414,7 @@ int clope_loop_index_from_beta(osl_scop_p scop, clay_array_p beta) {
   return clope_characterize_beta(scop, beta, NULL);
 }
 
-clay_list_p clope_parallel_loop_betas(osl_scop_p scop) {
-  candl_options_p options;
-  clay_list_p parallelLoopBetas;
-  osl_dependence_p dependences;
-
-  dependences = (osl_dependence_p) osl_generic_lookup(scop->extension, OSL_URI_DEPENDENCE);
-  if (dependences) {
-    parallelLoopBetas = clope_parallel_loop_betas_(scop, dependences);
-  } else {
-    options = candl_options_malloc();
-    options->fullcheck = 1;
-    dependences = candl_dependence(scop, options);
-    if (dependences)
-      candl_dependence_init_fields(scop, dependences);
-    parallelLoopBetas = clope_parallel_loop_betas_(scop, dependences);
-    candl_options_free(options);
-  }
-
-  return parallelLoopBetas;
-}
-
-clay_list_p clope_parallel_loop_betas_(osl_scop_p scop, osl_dependence_p dependences) {
+static clay_list_p clope_parallel_loop_betas_(osl_scop_p scop, osl_dependence_p dependences) {
   // Parallelism condition of a given loop = all dependences where either source
   // or target statement, or both, have beta-prefix of this loop are not carried
   // by this loop.
@@ -451,7 +435,7 @@ clay_list_p clope_parallel_loop_betas_(osl_scop_p scop, osl_dependence_p depende
     sourceBeta = clay_beta_extract(dependence->stmt_source_ptr->scattering);
     targetBeta = clay_beta_extract(dependence->stmt_target_ptr->scattering);
 
-    int matching = matchingLength(sourceBeta, targetBeta);
+    int matching = clope_clay_array_matching_length(sourceBeta, targetBeta);
     for (i = 0; i < matching; i++) {
       clay_array_p loop = clope_clay_sub_array(sourceBeta, i + 1); // sourceBeta and targetBeta are identical up to matching.
       int index = clope_loop_index_from_beta(scop, loop);
@@ -475,6 +459,27 @@ clay_list_p clope_parallel_loop_betas_(osl_scop_p scop, osl_dependence_p depende
   }
   clay_list_free(allLoopBetas);
   clay_list_free(nonparallelLoopBetas);
+  return parallelLoopBetas;
+}
+
+clay_list_p clope_parallel_loop_betas(osl_scop_p scop) {
+  candl_options_p options;
+  clay_list_p parallelLoopBetas;
+  osl_dependence_p dependences;
+
+  dependences = (osl_dependence_p) osl_generic_lookup(scop->extension, OSL_URI_DEPENDENCE);
+  if (dependences) {
+    parallelLoopBetas = clope_parallel_loop_betas_(scop, dependences);
+  } else {
+    options = candl_options_malloc();
+    options->fullcheck = 1;
+    dependences = candl_dependence(scop, options);
+    if (dependences)
+      candl_dependence_init_fields(scop, dependences);
+    parallelLoopBetas = clope_parallel_loop_betas_(scop, dependences);
+    candl_options_free(options);
+  }
+
   return parallelLoopBetas;
 }
 
@@ -540,7 +545,7 @@ clay_list_p clope_parallel_loop_betas_applied_(osl_scop_p scop, osl_dependence_p
     sourceOrigBeta = clope_applied_extract_orig_beta(sourceBeta);
     targetOrigBeta = clope_applied_extract_orig_beta(targetBeta);
 
-    int matching = matchingLength(sourceOrigBeta, targetOrigBeta);
+    int matching = clope_clay_array_matching_length(sourceOrigBeta, targetOrigBeta);
     for (i = 1; i < 2*matching + 1; i += 2) {
       // The problem here is that sourceBeta is identical for all statements, a series of zeros.
       // I guess it should be shomehow spaced original beta instead to reflect different loops and check for carried
@@ -735,70 +740,3 @@ clay_list_p clope_scheduled_parallel_loop_betas(osl_scop_p scop) {
   return betas;
 }
 
-int main(int argc, char **argv) {
-  FILE *input;
-  FILE *output;
-  osl_scop_p scop;
-
-  clope_options_p options = clope_options_parse(&argc, argv);
-  if (!options) {
-    clope_options_usage(stderr, argc, argv);
-    return 1;
-  }
-  if (argc > 2) {
-    clope_options_usage(stderr, argc, argv);
-    return 2;
-  }
-
-  // Standard input.
-  if (argc == 1) {
-    input = stdin;
-  } else {
-    if (!(input = fopen(argv[1], "r"))) {
-      fprintf(stderr, "Could not open file %s\n", argv[1]);
-      return 3;
-    }
-  }
-
-  scop = osl_scop_read(input);
-  if (input != stdin) {
-    fclose(input);
-  }
-  if (!scop) {
-    fprintf(stderr, "Could not read SCoP file %s\n", argv[1]);
-    return 4;
-  }
-
-  if (clope_scop_has_unions(scop) &&
-      !options->conservative) {
-    fprintf(stderr, "Cannot generate loop extension for SCoP with union of\n"
-                    "relations scattering without `--conservative 1'.\n");
-    osl_scop_free(scop);
-    return 5;
-  }
-
-  if (options->scheduled) {
-    clope_generate_osl_loop_scheduled(scop);
-  } else {
-    clope_generate_osl_loop(scop);
-  }
-
-  if (!options->output_filename) {
-    output = stdout;
-  } else {
-    if (!(output = fopen(options->output_filename, "w"))) {
-      fprintf(stderr, "Could not open file %s for writing\n",
-              options->output_filename);
-      osl_scop_free(scop);
-      return 6;
-    }
-  }
-
-  osl_scop_print(output, scop);
-  osl_scop_free(scop);
-
-  if (output != stdout)
-    fclose(output);
-
-  return 0;
-}
